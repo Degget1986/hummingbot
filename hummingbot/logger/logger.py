@@ -7,14 +7,17 @@ import time
 import sys
 import traceback
 from typing import Optional
+import pandas as pd
 
 from .application_warning import ApplicationWarning
 
+TESTING_TOOLS = ["nose", "unittest", "pytest"]
 
 #  --- Copied from logging module ---
 if hasattr(sys, '_getframe'):
-    currentframe = lambda: sys._getframe(3)
-else: #pragma: no cover
+    def currentframe():
+        return sys._getframe(3)
+else:   # pragma: no cover
     def currentframe():
         """Return the frame object for the caller's stack frame."""
         try:
@@ -28,12 +31,26 @@ class HummingbotLogger(PythonLogger):
     def __init__(self, name: str):
         super().__init__(name)
 
+    @staticmethod
+    def is_testing_mode() -> bool:
+        return any(tools in arg
+                   for tools in TESTING_TOOLS
+                   for arg in sys.argv)
+
+    def notify(self, msg: str):
+        from . import INFO
+        self.log(INFO, msg)
+        if not HummingbotLogger.is_testing_mode():
+            from hummingbot.client.hummingbot_application import HummingbotApplication
+            hummingbot_app: HummingbotApplication = HummingbotApplication.main_application()
+            hummingbot_app._notify(f"({pd.Timestamp.fromtimestamp(int(time.time()))}) {msg}")
+
     def network(self, log_msg: str, app_warning_msg: Optional[str] = None, *args, **kwargs):
         from hummingbot.client.hummingbot_application import HummingbotApplication
         from . import NETWORK
 
         self.log(NETWORK, log_msg, *args, **kwargs)
-        if app_warning_msg is not None:
+        if app_warning_msg is not None and not HummingbotLogger.is_testing_mode():
             app_warning: ApplicationWarning = ApplicationWarning(
                 time.time(),
                 self.name,
@@ -45,16 +62,22 @@ class HummingbotLogger(PythonLogger):
             hummingbot_app.add_application_warning(app_warning)
 
     #  --- Copied from logging module ---
-    def findCaller(self, stack_info=False):
+    def findCaller(self, stack_info=False, stacklevel=1):
         """
         Find the stack frame of the caller so that we can note the source
         file name, line number and function name.
         """
         f = currentframe()
-        #On some versions of IronPython, currentframe() returns None if
-        #IronPython isn't run with -X:Frames.
+        # On some versions of IronPython, currentframe() returns None if
+        # IronPython isn't run with -X:Frames.
         if f is not None:
             f = f.f_back
+        orig_f = f
+        while f and stacklevel > 1:
+            f = f.f_back
+            stacklevel -= 1
+        if not f:
+            f = orig_f
         rv = "(unknown file)", 0, "(unknown function)", None
         while hasattr(f, "f_code"):
             co = f.f_code

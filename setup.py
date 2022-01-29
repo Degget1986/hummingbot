@@ -1,113 +1,121 @@
-#!/usr/bin/env python
-
-from setuptools import setup
-from Cython.Build import cythonize
 import numpy as np
 import os
 import subprocess
 import sys
 
-if os.name == "posix":
+from setuptools import find_packages, setup
+from setuptools.command.build_ext import build_ext
+
+from Cython.Build import cythonize
+
+is_posix = (os.name == "posix")
+
+if is_posix:
     os_name = subprocess.check_output("uname").decode("utf8")
     if "Darwin" in os_name:
         os.environ["CFLAGS"] = "-stdlib=libc++ -std=c++11"
     else:
         os.environ["CFLAGS"] = "-std=c++11"
 
+if os.environ.get('WITHOUT_CYTHON_OPTIMIZATIONS'):
+    os.environ["CFLAGS"] += " -O0"
+
+
+# Avoid a gcc warning below:
+# cc1plus: warning: command line option ???-Wstrict-prototypes??? is valid
+# for C/ObjC but not for C++
+class BuildExt(build_ext):
+    def build_extensions(self):
+        if os.name != "nt" and '-Wstrict-prototypes' in self.compiler.compiler_so:
+            self.compiler.compiler_so.remove('-Wstrict-prototypes')
+        super().build_extensions()
+
 
 def main():
     cpu_count = os.cpu_count() or 8
-    version = "20190812"
-    packages = [
-        "hummingbot",
-        "hummingbot.client",
-        "hummingbot.client.command",
-        "hummingbot.client.config",
-        "hummingbot.client.liquidity_bounty",
-        "hummingbot.client.ui",
-        "hummingbot.core",
-        "hummingbot.core.data_type",
-        "hummingbot.core.event",
-        "hummingbot.core.management",
-        "hummingbot.core.utils",
-        "hummingbot.data_feed",
-        "hummingbot.logger",
-        "hummingbot.market",
-        "hummingbot.market.bamboo_relay",
-        "hummingbot.market.binance",
-        "hummingbot.market.bittrex",
-        "hummingbot.market.coinbase_pro",
-        "hummingbot.market.ddex",
-        "hummingbot.market.huobi",
-        "hummingbot.market.idex",
-        "hummingbot.market.radar_relay",
-        "hummingbot.strategy",
-        "hummingbot.strategy.arbitrage",
-        "hummingbot.strategy.cross_exchange_market_making",
-        "hummingbot.strategy.discovery",
-        "hummingbot.strategy.pure_market_making",
-        "hummingbot.templates",
-        "hummingbot.wallet",
-        "hummingbot.wallet.ethereum",
-        "hummingbot.wallet.ethereum.uniswap",
-        "hummingbot.wallet.ethereum.watcher",
-        "hummingbot.wallet.ethereum.zero_ex",
-    ]
+    version = "20211201"
+    packages = find_packages(include=["hummingbot", "hummingbot.*"])
     package_data = {
         "hummingbot": [
             "core/cpp/*",
-            "client/liquidity_bounty/*.txt",
-            "wallet/ethereum/zero_ex/zero_ex_coordinator_abi.json",
-            "wallet/ethereum/zero_ex/zero_ex_coordinator_registry_abi.json",
-            "wallet/ethereum/zero_ex/zero_ex_exchange_abi.json",
-            "wallet/ethereum/token_abi/*.json",
-            "wallet/ethereum/erc20_tokens.json",
             "VERSION",
             "templates/*TEMPLATE.yml"
         ],
     }
-    install_requires=[
+    install_requires = [
+        "0x-contract-addresses",
+        "0x-contract-wrappers",
+        "0x-order-utils",
         "aioconsole",
+        "aiohttp",
         "aiokafka",
-        "attrdict",
+        "appdirs",
+        "appnope",
+        "bidict",
+        "cachetools",
+        "certifi",
+        "cryptography",
+        "cython",
         "cytoolz",
+        "diff-cover",
+        "dydx-python",
+        "dydx-v3-python",
         "eth-abi",
         "eth-account",
-        "eth-hash",
+        "eth-bloom",
         "eth-keyfile",
-        "eth-keys",
-        "eth-rlp",
+        "eth-typing",
         "eth-utils",
+        "ethsnarks-loopring",
+        "flake8",
         "hexbytes",
-        "kafka-python",
-        "lru-dict",
-        "parsimonious",
-        "pycryptodome",
-        "requests",
-        "rlp",
-        "toolz",
-        "tzlocal",
-        "urllib3",
-        "web3",
-        "websockets",
-        "aiohttp",
-        "async-timeout",
-        "attrs",
-        "certifi",
-        "chardet",
-        "cython==0.29.5",
-        "idna",
-        "idna_ssl",
-        "multidict",
+        "importlib-metadata",
+        "mypy-extensions",
         "numpy",
         "pandas",
-        "pytz",
-        "pyyaml",
-        "python-binance==0.6.9",
+        "pip",
+        "pre-commit",
+        "prompt-toolkit",
+        "psutil",
+        "pyjwt",
+        "pyperclip",
+        "python-dateutil",
+        "python-telegram-bot",
+        "requests",
+        "rsa",
+        "ruamel-yaml",
+        "scipy",
+        "signalr-client-aio",
+        "simplejson",
+        "six",
         "sqlalchemy",
+        "sync-timeout",
+        "tzlocal",
         "ujson",
+        "web3",
+        "websockets",
         "yarl",
     ]
+
+    cython_kwargs = {
+        "language": "c++",
+        "language_level": 3,
+    }
+
+    cython_sources = ["hummingbot/**/*.pyx"]
+    if os.path.exists('test'):
+        cython_sources.append("test/**/*.pyx")
+
+    if os.environ.get('WITHOUT_CYTHON_OPTIMIZATIONS'):
+        compiler_directives = {
+            "optimize.use_switch": False,
+            "optimize.unpack_method_calls": False,
+        }
+    else:
+        compiler_directives = {}
+
+    if is_posix:
+        cython_kwargs["nthreads"] = cpu_count
 
     if "DEV_MODE" in os.environ:
         version += ".dev1"
@@ -116,28 +124,28 @@ def main():
         ]
         package_data["hummingbot"].append("core/cpp/*.cpp")
 
-    if len(sys.argv) > 1 and sys.argv[1] == "build_ext":
+    if len(sys.argv) > 1 and sys.argv[1] == "build_ext" and is_posix:
         sys.argv.append(f"--parallel={cpu_count}")
 
     setup(name="hummingbot",
           version=version,
-          description="CoinAlpha Hummingbot",
+          description="Hummingbot",
           url="https://github.com/CoinAlpha/hummingbot",
-          author="Martin Kou",
-          author_email="martin@coinalpha.com",
-          license="Proprietary",
+          author="CoinAlpha, Inc.",
+          author_email="dev@hummingbot.io",
+          license="Apache 2.0",
           packages=packages,
           package_data=package_data,
           install_requires=install_requires,
-          ext_modules=cythonize([
-              "hummingbot/**/*.pyx",
-          ], language="c++", language_level=3, nthreads=cpu_count),
+          ext_modules=cythonize(cython_sources, compiler_directives=compiler_directives, **cython_kwargs),
           include_dirs=[
-              np.get_include(),
+              np.get_include()
           ],
           scripts=[
-              "bin/hummingbot.py"
+              "bin/hummingbot.py",
+              "bin/hummingbot_quickstart.py"
           ],
+          cmdclass={'build_ext': BuildExt},
           )
 
 

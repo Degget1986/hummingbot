@@ -1,30 +1,28 @@
 #!/usr/bin/env python
 
 from collections import namedtuple
-from typing import List
 from datetime import datetime
+from typing import List
+
 import pandas as pd
 
-from hummingbot.core.event.events import (
-    TradeType,
-    TradeFee,
-    OrderType,
-)
+from hummingbot.core.data_type.trade_fee import TradeFeeBase
+from hummingbot.core.event.events import OrderType, TradeType
 
 
-class Trade(namedtuple("_Trade", "symbol, side, price, amount, order_type, market, timestamp, trade_fee")):
-    symbol: str
+class Trade(namedtuple("_Trade", "trading_pair, side, price, amount, order_type, market, timestamp, trade_fee")):
+    trading_pair: str
     side: TradeType
     price: float
     amount: float
     order_type: OrderType
     market: str
     timestamp: float
-    trade_fee: TradeFee
+    trade_fee: TradeFeeBase
 
     @classmethod
     def to_pandas(cls, trades: List):
-        columns: List[str] = ["symbol",
+        columns: List[str] = ["trading_pair",
                               "price",
                               "quantity",
                               "order_type",
@@ -42,11 +40,11 @@ class Trade(namedtuple("_Trade", "symbol, side, price, amount, order_type, marke
                 flat_fee_str = ",".join(fee_strs)
 
             data.append([
-                trade.symbol,
+                trade.trading_pair,
                 trade.price,
                 trade.amount,
-                "market" if trade.order_type is OrderType.MARKET else "limit",
-                "buy" if trade.side is TradeType.BUY else "sell",
+                trade.order_type.name.lower(),
+                trade.side.name.lower(),
                 trade.market,
                 datetime.fromtimestamp(trade.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
                 trade.trade_fee.percent,
@@ -54,3 +52,7 @@ class Trade(namedtuple("_Trade", "symbol, side, price, amount, order_type, marke
             ])
 
         return pd.DataFrame(data=data, columns=columns)
+
+    @property
+    def trade_type(self):
+        return self.side.name

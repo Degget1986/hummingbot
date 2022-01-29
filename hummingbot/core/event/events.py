@@ -1,24 +1,11 @@
 #!/usr/bin/env python
-
+from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
-from typing import (
-    Tuple,
-    List,
-    Dict,
-    NamedTuple,
-)
+from typing import Dict, List, NamedTuple, Optional
 
 from hummingbot.core.data_type.order_book_row import OrderBookRow
-
-
-class WalletEvent(Enum):
-    ReceivedAsset = 5
-    BalanceChanged = 6
-    WrappedEth = 7
-    UnwrappedEth = 8
-    GasUsed = 9
-    TokenApproved = 10
-    TransactionFailure = 99
+from hummingbot.core.data_type.trade_fee import AddedToCostTradeFee, TokenAmount, TradeFeeBase
 
 
 class MarketEvent(Enum):
@@ -26,7 +13,7 @@ class MarketEvent(Enum):
     BuyOrderCompleted = 102
     SellOrderCompleted = 103
     # Trade = 104  Deprecated
-    WithdrawAsset = 105
+    WithdrawAsset = 105  # Locally Deprecated, but still present in hummingsim
     OrderCancelled = 106
     OrderFilled = 107
     OrderExpired = 108
@@ -34,19 +21,12 @@ class MarketEvent(Enum):
     TransactionFailure = 199
     BuyOrderCreated = 200
     SellOrderCreated = 201
-
-
-class NewBlocksWatcherEvent(Enum):
-    NewBlocks = 401
-
-
-class IncomingEthWatcherEvent(Enum):
-    ReceivedEther = 501
-
-
-class ERC20WatcherEvent(Enum):
-    ReceivedToken = 601
-    ApprovedToken = 602
+    FundingPaymentCompleted = 202
+    RangePositionInitiated = 300
+    RangePositionCreated = 301
+    RangePositionRemoved = 302
+    RangePositionUpdated = 303
+    RangePositionFailure = 304
 
 
 class OrderBookEvent(Enum):
@@ -56,11 +36,53 @@ class OrderBookEvent(Enum):
 class TradeType(Enum):
     BUY = 1
     SELL = 2
+    RANGE = 3
 
 
 class OrderType(Enum):
     MARKET = 1
     LIMIT = 2
+    LIMIT_MAKER = 3
+
+    def is_limit_type(self):
+        return self in (OrderType.LIMIT, OrderType.LIMIT_MAKER)
+
+
+class PositionAction(Enum):
+    OPEN = "OPEN"
+    CLOSE = "CLOSE"
+    NIL = "NIL"
+
+
+# For Derivatives Exchanges
+class PositionSide(Enum):
+    LONG = "LONG"
+    SHORT = "SHORT"
+    BOTH = "BOTH"
+
+
+# For Derivatives Exchanges
+class PositionMode(Enum):
+    HEDGE = True
+    ONEWAY = False
+
+
+class FundingInfo(NamedTuple):
+    trading_pair: str
+    index_price: Decimal
+    mark_price: Decimal
+    next_funding_utc_timestamp: int
+    rate: Decimal
+
+
+class PriceType(Enum):
+    MidPrice = 1
+    BestBid = 2
+    BestAsk = 3
+    LastTrade = 4
+    LastOwnTrade = 5
+    InventoryCost = 6
+    Custom = 7
 
 
 class MarketTransactionFailureEvent(NamedTuple):
@@ -74,68 +96,39 @@ class MarketOrderFailureEvent(NamedTuple):
     order_type: OrderType
 
 
-class WalletReceivedAssetEvent(NamedTuple):
-    timestamp: float
-    tx_hash: str
-    from_address: str
-    to_address: str
-    asset_name: str
-    amount_received: float
-    raw_amount_received: int
-
-
-class WalletWrappedEthEvent(NamedTuple):
-    timestamp: float
-    tx_hash: str
-    address: str
-    amount: float
-    raw_amount: int
-
-
-class WalletUnwrappedEthEvent(NamedTuple):
-    timestamp: float
-    tx_hash: str
-    address: str
-    amount: float
-    raw_amount: int
-
-
-class MarketReceivedAssetEvent(NamedTuple):
-    timestamp: float
-    tx_hash: str
-    from_address: str
-    to_address: str
-    asset_name: str
-    amount_received: float
-
-
-class BuyOrderCompletedEvent(NamedTuple):
+@dataclass
+class BuyOrderCompletedEvent:
     timestamp: float
     order_id: str
     base_asset: str
     quote_asset: str
     fee_asset: str
-    base_asset_amount: float
-    quote_asset_amount: float
-    fee_amount: float
+    base_asset_amount: Decimal
+    quote_asset_amount: Decimal
+    fee_amount: Decimal
     order_type: OrderType
+    exchange_order_id: Optional[str] = None
 
 
-class SellOrderCompletedEvent(NamedTuple):
+@dataclass
+class SellOrderCompletedEvent:
     timestamp: float
     order_id: str
     base_asset: str
     quote_asset: str
     fee_asset: str
-    base_asset_amount: float
-    quote_asset_amount: float
-    fee_amount: float
+    base_asset_amount: Decimal
+    quote_asset_amount: Decimal
+    fee_amount: Decimal
     order_type: OrderType
+    exchange_order_id: Optional[str] = None
 
 
-class OrderCancelledEvent(NamedTuple):
+@dataclass
+class OrderCancelledEvent:
     timestamp: float
     order_id: str
+    exchange_order_id: Optional[str] = None
 
 
 class OrderExpiredEvent(NamedTuple):
@@ -143,88 +136,49 @@ class OrderExpiredEvent(NamedTuple):
     order_id: str
 
 
-class MarketWithdrawAssetEvent(NamedTuple):
+@dataclass
+class FundingPaymentCompletedEvent:
     timestamp: float
-    tracking_id: str
-    to_address: str
-    asset_name: str
-    amount: float
-    fee_amount: float
-
-
-class EthereumGasUsedEvent(NamedTuple):
-    timestamp: float
-    tx_hash: str
-    gas_price_gwei: float
-    gas_price_raw: int
-    gas_used: int
-    eth_amount: float
-    eth_amount_raw: int
-
-
-class TokenApprovedEvent(NamedTuple):
-    timestamp: float
-    tx_hash: str
-    owner_address: str
-    spender_address: str
-    asset_name: str
-    amount: float
-    raw_amount: int
-
-
-class TradeFee(NamedTuple):
-    percent: float # 0.1 = 10%
-    flat_fees: List[Tuple[str, float]] = [] # list of (symbol, amount) ie: ("ETH", 0.05)
-
-    @classmethod
-    def to_json(cls, trade_fee: "TradeFee") -> Dict[str, any]:
-        return {
-            "percent": trade_fee.percent,
-            "flat_fees": [{"symbol": symbol, "amount": amount}
-                          for symbol, amount in trade_fee.flat_fees]
-        }
-
-    @classmethod
-    def from_json(cls, data: Dict[str, any]) -> "TradeFee":
-        return TradeFee(
-            data["percent"],
-            [(fee_entry["symbol"], fee_entry["amount"])
-             for fee_entry in data["flat_fees"]]
-        )
+    market: str
+    trading_pair: str
+    amount: Decimal
+    funding_rate: Decimal
 
 
 class OrderBookTradeEvent(NamedTuple):
-    symbol: str
+    trading_pair: str
     timestamp: float
     type: TradeType
-    price: float
-    amount: float
+    price: Decimal
+    amount: Decimal
 
 
 class OrderFilledEvent(NamedTuple):
     timestamp: float
     order_id: str
-    symbol: str
+    trading_pair: str
     trade_type: TradeType
     order_type: OrderType
-    price: float
-    amount: float
-    trade_fee: TradeFee
+    price: Decimal
+    amount: Decimal
+    trade_fee: TradeFeeBase
     exchange_trade_id: str = ""
+    leverage: Optional[int] = 1
+    position: Optional[str] = "NIL"
 
     @classmethod
     def order_filled_events_from_order_book_rows(cls,
                                                  timestamp: float,
                                                  order_id: str,
-                                                 symbol: str,
+                                                 trading_pair: str,
                                                  trade_type: TradeType,
                                                  order_type: OrderType,
-                                                 trade_fee: TradeFee,
+                                                 trade_fee: TradeFeeBase,
                                                  order_book_rows: List[OrderBookRow],
                                                  exchange_trade_id: str = "") -> List["OrderFilledEvent"]:
         return [
-            OrderFilledEvent(timestamp, order_id, symbol, trade_type, order_type,
-                             r.price, r.amount, trade_fee, exchange_trade_id=exchange_trade_id)
+            OrderFilledEvent(timestamp, order_id, trading_pair, trade_type, order_type,
+                             Decimal(r.price), Decimal(r.amount), trade_fee, exchange_trade_id=exchange_trade_id)
             for r in order_book_rows
         ]
 
@@ -238,27 +192,100 @@ class OrderFilledEvent(NamedTuple):
             execution_report["c"],
             execution_report["s"],
             TradeType.BUY if execution_report["S"] == "BUY" else TradeType.SELL,
-            OrderType.LIMIT if execution_report["o"] == "LIMIT" else OrderType.MARKET,
-            float(execution_report["L"]),
-            float(execution_report["l"]),
-            TradeFee(percent=0.0, flat_fees=[(execution_report["N"], float(execution_report["n"]))]),
+            OrderType[execution_report["o"]],
+            Decimal(execution_report["L"]),
+            Decimal(execution_report["l"]),
+            AddedToCostTradeFee(flat_fees=[TokenAmount(execution_report["N"], Decimal(execution_report["n"]))]),
             exchange_trade_id=execution_report["t"]
         )
 
 
-class BuyOrderCreatedEvent(NamedTuple):
+@dataclass
+class BuyOrderCreatedEvent:
     timestamp: float
     type: OrderType
-    symbol: str
-    amount: float
-    price: float
+    trading_pair: str
+    amount: Decimal
+    price: Decimal
     order_id: str
+    exchange_order_id: Optional[str] = None
+    leverage: Optional[int] = 1
+    position: Optional[str] = "NILL"
 
 
-class SellOrderCreatedEvent(NamedTuple):
+@dataclass
+class SellOrderCreatedEvent:
     timestamp: float
     type: OrderType
-    symbol: str
-    amount: float
-    price: float
+    trading_pair: str
+    amount: Decimal
+    price: Decimal
     order_id: str
+    exchange_order_id: Optional[str] = None
+    leverage: Optional[int] = 1
+    position: Optional[str] = "NILL"
+
+
+@dataclass
+class RangePositionInitiatedEvent:
+    timestamp: float
+    hb_id: str
+    tx_hash: str
+    trading_pair: str
+    fee_tier: str
+    lower_price: Decimal
+    upper_price: Decimal
+    base_amount: Decimal
+    quote_amount: Decimal
+    status: str
+    gas_price: Decimal
+
+
+@dataclass
+class RangePositionCreatedEvent:
+    timestamp: float
+    hb_id: str
+    tx_hash: str
+    token_id: str
+    trading_pair: str
+    fee_tier: str
+    lower_price: Decimal
+    upper_price: Decimal
+    base_amount: Decimal
+    quote_amount: Decimal
+    status: str
+    gas_price: Decimal
+
+
+@dataclass
+class RangePositionUpdatedEvent:
+    timestamp: float
+    hb_id: str
+    tx_hash: str
+    token_id: str
+    base_amount: Decimal
+    quote_amount: Decimal
+    status: str
+
+
+@dataclass
+class RangePositionRemovedEvent:
+    timestamp: float
+    hb_id: str
+    token_id: Optional[str] = None
+
+
+@dataclass
+class RangePositionFailureEvent:
+    timestamp: float
+    hb_id: str
+
+
+class LimitOrderStatus(Enum):
+    UNKNOWN = 0
+    NEW = 1
+    OPEN = 2
+    CANCELING = 3
+    CANCELED = 4
+    COMPLETED = 5
+    FAILED = 6
